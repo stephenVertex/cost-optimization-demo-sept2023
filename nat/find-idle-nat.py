@@ -73,5 +73,16 @@ for arn in unique_arns:
         
 print("No byte arns:")
 print(no_byte_arns)
-      
 print("We should probably get rid of these")
+
+
+## Maybe we should write this to a slack topuic
+
+sns = session.client('sns', region_name='us-east-1')
+
+sns.publish(
+    TopicArn="arn:aws:sns:us-east-1:750813457616:monitoring-and-alerting-develop-SNSTopicAlerting-rFSY91iOcCBu",
+    Message=f"The following NAT gateways are idle: {no_byte_arns}",
+    Subject="Idle NAT Gateway alert",
+)
+
