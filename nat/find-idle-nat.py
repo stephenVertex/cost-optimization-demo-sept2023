@@ -32,10 +32,6 @@ def run_query(query, database, s3_output):
 
 # Query for NAT Gateways
 query = """
-SELECT * FROM "AwsDataCatalog"."test-adb"."demo_nat_demo_cur";
-"""
-
-query = """
 SELECT product_region,
         line_item_usage_account_id,
         line_item_resource_id,
@@ -64,7 +60,7 @@ while True:
     time.sleep(5)  # wait 5 seconds before checking again
 
 
-# Query results
+# Query results, page by page
 paginator = client.get_paginator('get_query_results')
 row_set = []
 page_num = 1
