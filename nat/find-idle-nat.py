@@ -2,17 +2,21 @@
 
 import boto3
 import time
+import requests
+import datetime
+import os
+import json
 
-# Query definitions
-database = 'test-adb'
-table = 'demo_nat_demo_cur'
+# Parameters for CUR query
+database  = 'test-adb'
+table     = 'demo_nat_demo_cur'
 s3_output = 's3://sjb-sample-cur/query-results'
 
 # Athena client
 session = boto3.Session(profile_name='ab')
-client = session.client('athena', region_name='us-east-1')
+client  = session.client('athena', region_name='us-east-1')
 
-
+# Running an Athena query, storing the results in S3
 def run_query(query, database, s3_output):
     response = client.start_query_execution(
         QueryString=query,
@@ -26,10 +30,26 @@ def run_query(query, database, s3_output):
     print('Execution ID: ' + response['QueryExecutionId'])
     return response['QueryExecutionId']
 
-# Query to find the table size
+# Query for NAT Gateways
 query = """
 SELECT * FROM "AwsDataCatalog"."test-adb"."demo_nat_demo_cur";
 """
+
+query = """
+SELECT product_region,
+        line_item_usage_account_id,
+        line_item_resource_id,
+        line_item_line_item_type,
+        line_item_usage_start_date, 
+        line_item_usage_end_date, 
+        line_item_usage_type,
+        sum(cost) as cost
+ FROM "AwsDataCatalog"."test-adb"."demo_nat_demo_cur"
+ WHERE line_item_line_item_type = 'Usage' 
+   AND (line_item_usage_type LIKE '%NatGateway-Hours%' OR line_item_usage_type LIKE '%NatGateway-Bytes%')
+GROUP BY 1,2,3,4,5,6,7;
+"""
+
 query_id = run_query(query, database, s3_output)
 
 # Wait for the query to finish
@@ -44,8 +64,6 @@ while True:
     time.sleep(5)  # wait 5 seconds before checking again
 
 
-# results = client.get_query_results(QueryExecutionId=query_id)
-
 # Query results
 paginator = client.get_paginator('get_query_results')
 row_set = []
@@ -55,6 +73,7 @@ for page in paginator.paginate(QueryExecutionId=query_id):
     row_set = row_set + page['ResultSet']['Rows']
     page_num = page_num + 1
 
+# Make the results into one big list
 header = [col['VarCharValue'] for col in row_set[0]['Data']]
 data_rows = [{header[i]: col['VarCharValue'] for i, col in enumerate(row['Data'])} for row in row_set[1:]]    
 
@@ -75,14 +94,106 @@ print("No byte arns:")
 print(no_byte_arns)
 print("We should probably get rid of these")
 
-
-## Maybe we should write this to a slack topuic
-
+## Send out a message via SNS?
 sns = session.client('sns', region_name='us-east-1')
-
+structured_msg = {
+    "src" : "stephens-idle-nat-gateway-detector-v0.1.2",
+    "dt"  : datetime.datetime.now().isoformat(),
+    "idle_gateways" : no_byte_arns    
+}
 sns.publish(
     TopicArn="arn:aws:sns:us-east-1:750813457616:monitoring-and-alerting-develop-SNSTopicAlerting-rFSY91iOcCBu",
-    Message=f"The following NAT gateways are idle: {no_byte_arns}",
+    Message=json.dumps(structured_msg),
     Subject="Idle NAT Gateway alert",
 )
+
+
+################################################################################
+## Let's make a Slack Message
+## 
+
+slack_msg = {
+    "blocks": [
+	{
+	    "type": "section",
+	    "block_id": "sectionBlockWithRestaurantImageThaiDescription",
+	    "text": {
+		"type": "mrkdwn",
+		"text": "Hello there, we have found the following NAT gateways to be idle for the past 31 days"
+	    }
+	},            
+    ]
+}
+
+def mkCheckBox(cb_text, cb_descr, value):
+    rval = {
+	"text": {
+	    "type": "mrkdwn",
+	    "text": cb_text
+	},
+	"description": {
+	    "type": "mrkdwn",
+	    "text": cb_descr
+	},
+	"value": value
+    }
+    return(rval)
+    
+slack_msg['blocks'].append(
+    {
+	"type": "divider"
+    }
+)
+
+checkbox_section = {
+    "type": "section",
+    "block_id": "sectionBlockWithCheckboxesMrkdwn",
+    "text": {
+	"type": "mrkdwn",
+	"text": "Select to delete"
+    },
+    "accessory": {
+	"type": "checkboxes",
+        "options" : []
+    }
+}
+
+cb_options = []
+for arn in no_byte_arns:
+    acct = arn.split(":")[4]
+
+    # get region from arn
+    region = arn.split(":")[3]
+
+    
+    cb = mkCheckBox(f"*arn:* `{arn}`",
+                    f"Acct: {acct}, Region: {region}",
+                    arn)
+    cb_options.append(cb)
+checkbox_section['accessory']['options'] = cb_options
+slack_msg['blocks'].append(checkbox_section)
+
+
+button = {
+    "type": "actions",
+    "elements": [
+	{
+	    "type": "button",
+	    "text": {
+		"type": "plain_text",
+		"text": "Delete (Exercise for reader)",
+		"emoji": True
+	    },
+	    "value": "click_me_123",
+	    "action_id": "actionId-0"
+	}
+    ]
+}
+slack_msg['blocks'].append(button)
+
+########################################
+
+
+shurl = os.environ['SHURL']
+requests.post(url=shurl, json=slack_msg)
 
