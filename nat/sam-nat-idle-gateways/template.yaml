@@ -39,6 +39,10 @@ Resources:
               Resource: '*'
 
 
+
+
+
+
   # Slack connector for all lambda functions to post logging information
   ConnectIdleNateFinderToSNS:
     Type: AWS::Serverless::Connector

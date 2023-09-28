@@ -1,0 +1,34 @@
+
+  ScheduledIdleNatFinder:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: find-idle-nat-lambda.lambda_handler
+      Runtime: python3.11
+      CodeUri: src/
+      Architectures:
+        - arm64
+      AutoPublishAlias: live
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+      Timeout: 20
+      Policies:
+        - arn:aws:iam::750813457616:policy/get_secret_slack_webhook_url
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - athena:*
+                - s3:*
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+              Resource: '*'
+      Events:
+        MyScheduledEvent:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 10 * * ? *)'
