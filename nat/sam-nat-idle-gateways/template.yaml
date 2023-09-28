@@ -1,0 +1,60 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Sample Python Serverless Function
+
+
+
+# Resources declares the AWS resources that you want to include in the stack
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
+Resources:
+  IdleNatFinder:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: find-idle-nat-lambda.lambda_handler
+      Runtime: python3.11
+      CodeUri: src/
+      Architectures:
+        - arm64
+      AutoPublishAlias: live
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+      Timeout: 20
+      Policies:
+        - arn:aws:iam::750813457616:policy/get_secret_slack_webhook_url
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - athena:*
+                - s3:*
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+              Resource: '*'
+
+
+  # Slack connector for all lambda functions to post logging information
+  ConnectIdleNateFinderToSNS:
+    Type: AWS::Serverless::Connector
+    Properties:
+      Source:
+        Id: IdleNatFinder
+      Destination:
+        Arn: arn:aws:sns:us-east-1:750813457616:monitoring-and-alerting-develop-SNSTopicAlerting-rFSY91iOcCBu
+        Type: AWS::SNS::Topic
+      Permissions:
+        - Write
+
+
+Outputs:
+  IdleNatFinderEndpoint:
+    Description: "Endpoint to find idle lambda functions Endpoint"
+    Value:
+      Fn::GetAtt: IdleNatFinderUrl.FunctionUrl
+      
